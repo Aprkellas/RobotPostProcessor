@@ -202,7 +202,7 @@ def callPostProcessor(arg = None):
     return
   succesful, created_filenamelist = result
   if succesful:
-    removeExternalAxis(fileuri, fileuri)
+    removeExternalAxis(fileuri)
     print 'Succesfully saved files:'
     for f in created_filenamelist:
       print '- %s' % f
@@ -342,21 +342,24 @@ def createProperty(type, name, defaultValue, callback):
     return prop
 
 
-def removeExternalAxis(input_file, output_file):
+def removeExternalAxis(input_file):
+  output_dir = os.path.dirname(input_file)
+  filename, file_extension = os.path.splitext(os.path.basename(input_file))
+  output_file = os.path.join(output_dir, filename + "NOEA" + file_extension)
+
+
   with open(input_file, 'r') as infile, open (output_file, 'w+') as outfile:
     previous_line = ""
 
     for line in infile:
             # Check if the line contains "E1" followed by a value
             match = re.search(r'E1\s*=\s*[\d.]+\s*mm', line)
-
             if match and previous_line.strip().endswith(','):
                 for line in outfile:
                     if line == previous_line:
                         line.replace('')
                 previous_line = previous_line.rstrip(',\n')
                 outfile.write(previous_line)
-                
 
             if match:
                 # Replace the matched part with an empty string
