@@ -203,6 +203,7 @@ def callPostProcessor(arg = None):
     return
   succesful, created_filenamelist = result
   if succesful:
+    removeExternalAxis(fileuri, fileuri)
     print 'Succesfully saved files:'
     for f in created_filenamelist:
       print '- %s' % f
