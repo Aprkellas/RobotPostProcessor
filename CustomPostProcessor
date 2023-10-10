@@ -7,7 +7,7 @@ other_cmd = app.findCommand('interactiveTranslateTCP')
 TRANSLATORS_DIR_NAME = 'Translators' 
 
 def OnStart():
-    global program
+    global program, manufacturer
 
     program = getProgram()
     if not program:
@@ -15,6 +15,9 @@ def OnStart():
         return
 
     controller = program.Executor.Controller
+
+    manufacturer = getManufacturer(controller)
+
     createProperties()
     executeInActionPanel()
 
@@ -54,34 +57,38 @@ def createProperty(type, name, defaultValue, callback):
     return prop
 
 def callPostProcessor(arg = None):
-  global all_props
+    global all_props, manufacturer
 
-  #Call selected post processor
-  manufacturer = prop_sel_pp.Value
-  fileuri = prop_output.Value
-  filebase, filetype = os.path.splitext(fileuri)
-  #Call the post processor that matches with the manufacturer chosen by the user
-  result = post_processors[manufacturer].postProcess(app, program, fileuri.decode('utf8'))
-  if not result or len(result) < 2:
-    #PP utilizes action panel and does ending actions inside its own code.
-    return
-  succesful, created_filenamelist = result
-  if succesful:
-    removeExternalAxis(fileuri)
-    print 'Succesfully saved files:'
-    for f in created_filenamelist:
-      print '- %s' % f
-  else:
-    print 'File writing failed'
-  #Cleanups
-  program.Executor.Controller.clearTargets()
-  
-  if arg:
-    #Called from action panel, call jog cmd to close action panel
-    other_cmd.execute()
-  
-  # Clear all_props handle to clear property on changed event handlers
-  all_props = None
+    manufacturer = 
+    externalAxis = cmd.getProperty('Exernal Axis').Value
+    
+    #Call selected post processor
+    manufacturer = prop_sel_pp.Value
+    fileuri = prop_output.Value
+    filebase, filetype = os.path.splitext(fileuri)
+    #Call the post processor that matches with the manufacturer chosen by the user
+    result = post_processors[manufacturer].postProcess(app, program, fileuri.decode('utf8'))
+    if not result or len(result) < 2:
+      #PP utilizes action panel and does ending actions inside its own code.
+      return
+    succesful, created_filenamelist = result
+    if succesful:
+      if externalAxis == "Exlude":
+        removeExternalAxis(fileuri)
+      print 'Succesfully saved files:'
+      for f in created_filenamelist:
+        print '- %s' % f
+    else:
+      print 'File writing failed'
+    #Cleanups
+    program.Executor.Controller.clearTargets()
+    
+    if arg:
+      #Called from action panel, call jog cmd to close action panel
+      other_cmd.execute()
+    
+    # Clear all_props handle to clear property on changed event handlers
+    all_props = None
 
 def createRestrainedProperty(type, name, defaultValue, constraints):
     prop = cmd.getProperty(name)
@@ -95,3 +102,75 @@ def createRestrainedProperty(type, name, defaultValue, constraints):
         prop.Value = defaultValue
 
     return prop
+
+def getManufacturer(controller):
+  #Try to figure out robot manufacturer based on the model
+  comp = controller.Component
+  keys = post_processors.keys()
+  manufacturer = ''
+  model = controller.Component.Name
+  
+  #Try model stamp
+  prop = comp.getProperty('RobotModelID')
+  if prop:
+    words = prop.Value.replace(' ','').split('|')
+    if words and words[0] in keys:
+      manufacturer = words[0]
+    if words and len(words) >= 2:
+      model = words[1]
+  
+  
+  if not manufacturer:
+    #Try from BOM description
+    bom = comp.BOMdescription.replace(' ', '')
+    for key in keys:
+      if key in bom:
+        return key
+  
+  if not manufacturer:
+    #Try controller names for big brands
+    ctr_name = controller.Name
+    if ctr_name in ['IRC5']:
+      return 'ABB'
+    elif ctr_name in ['KRC2', 'KRC3', 'KRC4']:
+      return 'KUKA'
+    elif ctr_name in ['R30iA', 'R-30iA Mate', 'R-30iB']:
+      return 'Fanuc'
+    elif ctr_name in ['DX100', 'DX200']:
+      return 'Yaskawa'
+    elif ctr_name in ['URControl', 'CB3']:
+      return 'UniversalRobots'
+  
+  #Alternative languages
+  if manufacturer == 'KUKA' and 'LBR' in model:
+    manufacturer += '-Sunrise'
+  
+  return manufacturer
+
+def removeExternalAxis(input_file):
+  output_dir = os.path.dirname(input_file)
+  filename, file_extension = os.path.splitext(os.path.basename(input_file))
+  output_file = os.path.join(output_dir, filename + "NOEA" + file_extension)
+
+
+  with open(input_file, 'r') as infile, open (output_file, 'w+') as outfile:
+    previous_line = ""
+
+    for line in infile:
+            # Check if the line contains "E1" followed by a value
+            match = re.search(r'E1\s*=\s*[\d.]+\s*mm', line)
+            if match and previous_line.strip().endswith(','):
+                for line in outfile:
+                    if line == previous_line:
+                        line.replace('')
+                previous_line = previous_line.rstrip(',\n')
+                outfile.write(previous_line)
+
+            if match:
+                # Replace the matched part with an empty string
+                line = line.replace(match.group(0), '')
+
+            # Write the modified line to the output file
+            outfile.write(line)
+            previous_line = line
+
