@@ -1,0 +1,97 @@
+from vcCommand import *
+import sys, os, importlib, re
+
+app = getApplication()
+cmd = getCommand()
+other_cmd = app.findCommand('interactiveTranslateTCP')
+TRANSLATORS_DIR_NAME = 'Translators' 
+
+def OnStart():
+    global program
+
+    program = getProgram()
+    if not program:
+        app.messageBox("No program selected, aborting.","Warning",VC_MESSAGE_TYPE_WARNING,VC_MESSAGE_BUTTONS_OK)
+        return
+
+    controller = program.Executor.Controller
+    createProperties()
+    executeInActionPanel()
+
+def getProgram():
+    teachcontext = app.TeachContext
+
+    if teachcontext.ActiveRobot:
+        executors = teachcontext.ActiveRobot.findBehavioursByType(VC_ROBOTEXECUTOR)
+
+    if executors:
+        return executors[0].Program
+
+    return None
+
+def createProperties():
+    global all_props, genButton
+    global prop_sel_pp, prop_output, prop_btn_output, prop_btn_pp
+    global post_processors, file_filters
+
+    createRestrainedProperty(VC_STRING, 'Exernal Axis', 'Include', ['Include', 'Exclude'])
+
+    genButton = createProperty(VC_BUTTON, 'Generate', None, callPostProcessor)
+
+    all_props = [x for x in cmd.Properties]
+
+def createProperty(type, name, defaultValue, callback):
+    prop = cmd.getProperty(name)
+    if prop == None:
+        prop = cmd.createProperty(type, name)
+
+    if defaultValue:
+        prop.Value = defaultValue
+
+    if callback:
+        prop.OnChanged = callback
+
+    return prop
+
+def callPostProcessor(arg = None):
+  global all_props
+
+  #Call selected post processor
+  manufacturer = prop_sel_pp.Value
+  fileuri = prop_output.Value
+  filebase, filetype = os.path.splitext(fileuri)
+  #Call the post processor that matches with the manufacturer chosen by the user
+  result = post_processors[manufacturer].postProcess(app, program, fileuri.decode('utf8'))
+  if not result or len(result) < 2:
+    #PP utilizes action panel and does ending actions inside its own code.
+    return
+  succesful, created_filenamelist = result
+  if succesful:
+    removeExternalAxis(fileuri)
+    print 'Succesfully saved files:'
+    for f in created_filenamelist:
+      print '- %s' % f
+  else:
+    print 'File writing failed'
+  #Cleanups
+  program.Executor.Controller.clearTargets()
+  
+  if arg:
+    #Called from action panel, call jog cmd to close action panel
+    other_cmd.execute()
+  
+  # Clear all_props handle to clear property on changed event handlers
+  all_props = None
+
+def createRestrainedProperty(type, name, defaultValue, constraints):
+    prop = cmd.getProperty(name)
+    if prop:
+        return prop
+
+    prop = cmd.createProperty(type, name, VC_PROPERTY_STEP)
+    prop.StepValues = constraints
+
+    if defaultValue:
+        prop.Value = defaultValue
+
+    return prop
